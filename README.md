@@ -79,6 +79,24 @@ Response `201`:
 ```
 Errors: `400` invalid body, `409` duplicate name.
 
+### `PATCH /limits/:id`
+Update a category limit. Partial body (`name`, `limitAmount`); at least one field required.
+
+```bash
+curl -X PATCH http://localhost:4000/limits/<id> \
+  -H 'Content-Type: application/json' \
+  -d '{"limitAmount":15000}'
+```
+Response `200` — same shape as `POST /limits`. Errors: `400` invalid, `404` unknown id, `409` name collision.
+
+### `DELETE /limits/:id`
+Remove a category limit. **Cascades to its activities** (foreign key `ON DELETE CASCADE`).
+
+```bash
+curl -X DELETE http://localhost:4000/limits/<id>
+```
+Response `204` empty body. Errors: `404` unknown id.
+
 ### `GET /activities`
 List activities, optionally filtered by category.
 
@@ -99,6 +117,24 @@ curl -X POST http://localhost:4000/activities \
   -H 'Content-Type: application/json' \
   -d '{"categoryId":"<id>","amount":2500,"description":"Lunch"}'
 ```
+
+### `PATCH /activities/:id`
+Update an activity. Partial body (`categoryId`, `amount`, `description`, `occurredAt`); at least one field required. Changing `categoryId` re-assigns the activity to a different limit.
+
+```bash
+curl -X PATCH http://localhost:4000/activities/<id> \
+  -H 'Content-Type: application/json' \
+  -d '{"amount":3000,"description":"Lunch (split)"}'
+```
+Response `200` — same shape as `POST /activities`. Errors: `400` invalid body or unknown `categoryId`, `404` unknown activity id.
+
+### `DELETE /activities/:id`
+Remove a single activity. The category limit is unaffected.
+
+```bash
+curl -X DELETE http://localhost:4000/activities/<id>
+```
+Response `204` empty body. Errors: `404` unknown id.
 
 ### `GET /limit-summary`
 Per-category usage in the **current calendar month**, with status.
@@ -165,14 +201,14 @@ The product is a single-page app for tracking monthly category spend against per
 **Next.js fullstack with API routes.** Tempting because it collapses to one deploy target, but it muddies the REST boundary the brief asks for (`GET /limits`, etc.) and locks the backend into Vercel's serverless model — which doesn't play nicely with a persistent `pg.Pool`. Kept frontend and backend as separate deployables so each can scale (or be replaced) independently.
 
 ### Failure scenario (1)
-**Cold-start latency on free hosting.** Render's free web service sleeps after 15 minutes idle and takes ~30–50s to wake; Neon's free Postgres auto-suspends and adds ~1s to the first query after idle. Result: a reviewer hitting the deployed app cold sees a long blank load, may assume it's broken, and bounce. Mitigations: a small `/health` endpoint plus a keep-warm pinger (cron-job.org) for the review window; longer-term, move to a paid Render plan or to Fly.io machines, which suspend but wake in ~1s.
+**Cold-start latency on free hosting.** Render's free web service sleeps after 15 minutes idle and takes ~30–50s to wake; Neon's free Postgres auto-suspends and adds ~1s to the first query after idle. Result: a reviewer hitting the deployed app cold sees a long blank load, may assume it's broken, and bounce. Mitigation in this submission: an in-process keepalive (`src/keepalive.ts`) pings the service's own `/health` every 10 minutes using `RENDER_EXTERNAL_URL`, which counts as inbound traffic and resets the idle timer. Render still recycles the dyno periodically (deploys, daily worker cycling), so the very first visitor after such an event still pays the cost. Longer-term, move to a paid Render plan or to Fly.io machines, which suspend but wake in ~1s.
 
 ### Out of scope
-Authentication, multi-user, multi-currency / FX, recurring activities, editing or deleting limits/activities, pagination, real-time updates, observability.
+Authentication, multi-user, multi-currency / FX, recurring activities, pagination, real-time updates, observability.
 
 ### What I would improve next
-- Edit/delete endpoints for limits and activities, with optimistic UI on the frontend.
 - A `period` field that actually does something (weekly/quarterly/yearly aggregates).
 - Replace `pg-mem` in tests with Testcontainers Postgres for full fidelity.
 - Add request logging (pino) and a structured error type instead of a generic 500.
 - Frontend: add a "log activity" form and per-category drill-down view.
+- Optimistic UI on edit/delete (currently refetches after every change).
