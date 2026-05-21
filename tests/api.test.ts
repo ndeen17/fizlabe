@@ -90,4 +90,79 @@ describe('limits + summary API', () => {
       .send({ name: 'Books', limitAmount: 800 });
     expect(dup.status).toBe(409);
   });
+
+  it('PATCH /limits/:id updates fields and is reflected in the summary', async () => {
+    const create = await request(app())
+      .post('/limits')
+      .send({ name: 'Snacks', limitAmount: 1000 })
+      .expect(201);
+    const id = create.body.id as string;
+
+    await request(app())
+      .post('/activities')
+      .send({ categoryId: id, amount: 800, description: 'Chips' })
+      .expect(201);
+
+    const patch = await request(app())
+      .patch(`/limits/${id}`)
+      .send({ limitAmount: 2000 });
+    expect(patch.status).toBe(200);
+    expect(patch.body.limitAmount).toBe(2000);
+
+    const summary = await request(app()).get('/limit-summary').expect(200);
+    const row = summary.body.find((s: any) => s.categoryId === id);
+    expect(row.limitAmount).toBe(2000);
+    expect(row.percentage).toBe(40);
+    expect(row.status).toBe('On Track');
+
+    const missing = await request(app()).patch('/limits/does-not-exist').send({ limitAmount: 5 });
+    expect(missing.status).toBe(404);
+  });
+
+  it('DELETE /limits/:id cascades to activities', async () => {
+    const create = await request(app())
+      .post('/limits')
+      .send({ name: 'Toys', limitAmount: 500 })
+      .expect(201);
+    const id = create.body.id as string;
+    await request(app())
+      .post('/activities')
+      .send({ categoryId: id, amount: 100, description: 'Lego' })
+      .expect(201);
+
+    const del = await request(app()).delete(`/limits/${id}`);
+    expect(del.status).toBe(204);
+
+    const acts = await request(app()).get(`/activities?categoryId=${id}`).expect(200);
+    expect(acts.body).toHaveLength(0);
+
+    const again = await request(app()).delete(`/limits/${id}`);
+    expect(again.status).toBe(404);
+  });
+
+  it('PATCH /activities/:id updates amount and shifts category usage', async () => {
+    const create = await request(app())
+      .post('/limits')
+      .send({ name: 'Gas', limitAmount: 1000 })
+      .expect(201);
+    const categoryId = create.body.id as string;
+    const act = await request(app())
+      .post('/activities')
+      .send({ categoryId, amount: 200, description: 'Refill' })
+      .expect(201);
+
+    const patch = await request(app())
+      .patch(`/activities/${act.body.id}`)
+      .send({ amount: 500 });
+    expect(patch.status).toBe(200);
+    expect(patch.body.amount).toBe(500);
+
+    const summary = await request(app()).get('/limit-summary').expect(200);
+    const row = summary.body.find((s: any) => s.categoryId === categoryId);
+    expect(row.usage).toBe(500);
+    expect(row.percentage).toBe(50);
+
+    const delAct = await request(app()).delete(`/activities/${act.body.id}`);
+    expect(delAct.status).toBe(204);
+  });
 });
