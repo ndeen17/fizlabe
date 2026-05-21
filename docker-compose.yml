@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: fizlabe-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finzla
+      POSTGRES_PASSWORD: finzla
+      POSTGRES_DB: finzla
+    ports:
+      - "5432:5432"
+    volumes:
+      - fizlabe_pgdata:/var/lib/postgresql/data
+
+volumes:
+  fizlabe_pgdata:
