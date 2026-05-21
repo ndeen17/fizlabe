@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createApp } from './app';
 import { initSchema } from './db';
 import { seedIfEmpty } from './seed';
+import { startKeepalive } from './keepalive';
 
 async function main() {
   await initSchema();
@@ -12,6 +13,7 @@ async function main() {
   app.listen(port, () => {
     // eslint-disable-next-line no-console
     console.log(`[fizlabe] listening on http://localhost:${port}`);
+    startKeepalive();
   });
 }
 
